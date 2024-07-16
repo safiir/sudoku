@@ -295,7 +295,7 @@ fn main() {
     ".9....4..",
   ]
   .iter()
-  .map(|xs| xs.clone().chars().collect::<Vec<_>>())
+  .map(|xs| xs.chars().collect::<Vec<_>>())
   .collect::<Vec<_>>();
 
   for mat in [mats] {
