@@ -29,9 +29,9 @@ impl Sudoku {
 
   fn helper(
     mat: &mut Vec<Vec<char>>,
-    row_dim: &mut Vec<u16>,
-    col_dim: &mut Vec<u16>,
-    box_dim: &mut Vec<u16>,
+    row_dim: &mut Vec<u32>,
+    col_dim: &mut Vec<u32>,
+    box_dim: &mut Vec<u32>,
   ) -> Vec<Vec<Vec<char>>> {
     if Self::reasoning(mat, row_dim, col_dim, box_dim).is_none() {
       return vec![];
@@ -47,13 +47,13 @@ impl Sudoku {
 
   fn reasoning(
     mat: &mut Vec<Vec<char>>,
-    row_dim: &mut Vec<u16>,
-    col_dim: &mut Vec<u16>,
-    box_dim: &mut Vec<u16>,
+    row_dim: &mut Vec<u32>,
+    col_dim: &mut Vec<u32>,
+    box_dim: &mut Vec<u32>,
   ) -> Option<()> {
     let len = mat.len();
     let n = len.sqrt();
-    let full = ((1u32 << len) - 1) as u16;
+    let full = ((1u64 << len) - 1) as u32;
 
     loop {
       let mut count = 0;
@@ -70,7 +70,7 @@ impl Sudoku {
                 let ans = avail.trailing_zeros() as u8 + 1;
                 mat[i][j] = char_to_radix(ans, len + 1);
 
-                let flag = 1u16 << (ans - 1);
+                let flag = 1u32 << (ans - 1);
                 row_dim[i] |= flag;
                 col_dim[j] |= flag;
                 box_dim[k] |= flag;
@@ -92,16 +92,16 @@ impl Sudoku {
 
   fn backtrack(
     mat: &mut Vec<Vec<char>>,
-    row_dim: &mut Vec<u16>,
-    col_dim: &mut Vec<u16>,
-    box_dim: &mut Vec<u16>,
+    row_dim: &mut Vec<u32>,
+    col_dim: &mut Vec<u32>,
+    box_dim: &mut Vec<u32>,
   ) -> Vec<Vec<Vec<char>>> {
     let len = mat.len();
     let n = len.sqrt();
-    let full = ((1u32 << len) - 1) as u16;
+    let full = ((1u64 << len) - 1) as u32;
 
     // MRV: pick the empty cell with the fewest candidates.
-    let mut best: Option<(usize, usize, u16)> = None;
+    let mut best: Option<(usize, usize, u32)> = None;
     let mut best_count = u32::MAX;
     for i in 0..len {
       for j in 0..len {
@@ -152,19 +152,19 @@ impl Sudoku {
   }
 
   // Build row / column / box bitmasks in a single pass over the board.
-  fn masks(mat: &Vec<Vec<char>>) -> (Vec<u16>, Vec<u16>, Vec<u16>) {
+  fn masks(mat: &Vec<Vec<char>>) -> (Vec<u32>, Vec<u32>, Vec<u32>) {
     let len = mat.len();
     let n = len.sqrt();
     let radix = len as u32 + 1;
 
-    let mut row = vec![0u16; len];
-    let mut col = vec![0u16; len];
-    let mut bx = vec![0u16; len];
+    let mut row = vec![0u32; len];
+    let mut col = vec![0u32; len];
+    let mut bx = vec![0u32; len];
 
     for i in 0..len {
       for j in 0..len {
         if let Some(d) = mat[i][j].to_digit(radix) {
-          let flag = 1u16 << (d - 1);
+          let flag = 1u32 << (d - 1);
           let k = i / n * n + j / n;
           row[i] |= flag;
           col[j] |= flag;
