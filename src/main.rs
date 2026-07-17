@@ -43,26 +43,20 @@ impl Sudoku {
     let len = mat.len();
     let n = len.sqrt();
 
-    loop {
-      let mut row_dim = Self::row_matrix(mat);
-      let mut col_dim = Self::col_matrix(mat);
-      let mut box_dim = Self::box_matrix(mat);
+    let mut row_dim = Self::row_matrix(mat);
+    let mut col_dim = Self::col_matrix(mat);
+    let mut box_dim = Self::box_matrix(mat);
 
+    loop {
       let mut count = 0;
       for (i, row) in mat.into_iter().enumerate() {
         for (j, cel) in row.into_iter().enumerate() {
           if *cel == '.' {
             let k = i / n * n + j / n;
-            let l = j % n * n + i % n; // box matrix offset
 
-            let opts: Vec<_> = (1..=len)
-              .into_iter()
-              .map(|n| n as u8)
-              .filter(|n| {
-                return !row_dim[i].contains(n)
-                  && !col_dim[j].contains(n)
-                  && !box_dim[k].contains(n);
-              })
+            let used = row_dim[i] | col_dim[j] | box_dim[k];
+            let opts: Vec<_> = (1..=len as u8)
+              .filter(|&d| used & (1 << (d - 1)) == 0)
               .collect();
 
             match opts.len() {
@@ -73,9 +67,10 @@ impl Sudoku {
 
                 *cel = char_to_radix(ans, len + 1);
 
-                row_dim[i][j] = ans;
-                col_dim[j][i] = ans;
-                box_dim[k][l] = ans;
+                let flag = 1u16 << (ans - 1);
+                row_dim[i] |= flag;
+                col_dim[j] |= flag;
+                box_dim[k] |= flag;
               }
               0 => {
                 return None;
@@ -93,7 +88,8 @@ impl Sudoku {
   }
 
   fn backtrack(mat: &mut Vec<Vec<char>>) -> Vec<Vec<Vec<char>>> {
-    let n = mat.len().sqrt();
+    let len = mat.len();
+    let n = len.sqrt();
 
     let row_dim = Self::row_matrix(mat);
     let col_dim = Self::col_matrix(mat);
@@ -105,12 +101,9 @@ impl Sudoku {
       for (j, cel) in row.iter().enumerate() {
         if *cel == '.' {
           let k = i / n * n + j / n;
-          let opts: Vec<_> = (1..=mat.len())
-            .into_iter()
-            .map(|n| n as u8)
-            .filter(|n| {
-              return !row_dim[i].contains(n) && !col_dim[j].contains(n) && !box_dim[k].contains(n);
-            })
+          let used = row_dim[i] | col_dim[j] | box_dim[k];
+          let opts: Vec<_> = (1..=len as u8)
+            .filter(|&d| used & (1 << (d - 1)) == 0)
             .collect();
           spaces.push(Space {
             pos: (i, j),
@@ -157,42 +150,32 @@ impl Sudoku {
     t
   }
 
-  fn row_matrix(mat: &Vec<Vec<char>>) -> Vec<Vec<u8>> {
-    mat
-      .iter()
-      .map(|xs| {
-        xs.iter()
-          .map(|&x| {
-            if x == '.' {
-              0
-            } else {
-              x.to_digit(mat.len() as u32 + 1).unwrap() as u8
-            }
-          })
-          .collect()
-      })
-      .collect()
+  fn bitmask<'a>(xs: impl IntoIterator<Item = &'a char>, radix: u32) -> u16 {
+    let mut b: u16 = 0;
+    for &x in xs {
+      if let Some(d) = x.to_digit(radix) {
+        b |= 1 << (d - 1);
+      }
+    }
+    return b;
   }
 
-  fn col_matrix(mat: &Vec<Vec<char>>) -> Vec<Vec<u8>> {
+  fn row_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
+    let radix = mat.len() as u32 + 1;
+    mat.iter().map(|xs| Self::bitmask(xs, radix)).collect()
+  }
+
+  fn col_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
+    let radix = mat.len() as u32 + 1;
     Self::transpose(mat)
       .iter()
-      .map(|xs| {
-        xs.iter()
-          .map(|&x| {
-            if x == '.' {
-              0
-            } else {
-              x.to_digit(mat.len() as u32 + 1).unwrap() as u8
-            }
-          })
-          .collect()
-      })
+      .map(|xs| Self::bitmask(xs, radix))
       .collect()
   }
 
-  fn box_matrix(mat: &Vec<Vec<char>>) -> Vec<Vec<u8>> {
+  fn box_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
     let n = mat.len().sqrt();
+    let radix = mat.len() as u32 + 1;
     mat
       .chunks(n)
       .flat_map(|slice| {
@@ -201,18 +184,7 @@ impl Sudoku {
           .map(|chunk| chunk.to_owned())
           .collect::<Vec<_>>()
       })
-      .map(|xs| {
-        xs.iter()
-          .flatten()
-          .map(|&x| {
-            if x == '.' {
-              0
-            } else {
-              x.to_digit(mat.len() as u32 + 1).unwrap() as u8
-            }
-          })
-          .collect()
-      })
+      .map(|xs| Self::bitmask(xs.iter().flatten(), radix))
       .collect()
   }
 }
