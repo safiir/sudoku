@@ -14,20 +14,26 @@ use std::{
   time::{Duration, Instant},
   vec,
 };
-use util::{char_to_radix, Space};
+use util::char_to_radix;
 
 impl Sudoku {
   pub fn solve(mat: Vec<Vec<char>>) -> Option<Vec<Vec<Vec<char>>>> {
-    let res = Self::helper(&mut mat.clone());
+    let mut board = mat.clone();
+    let (mut row_dim, mut col_dim, mut box_dim) = Self::masks(&board);
+    let res = Self::helper(&mut board, &mut row_dim, &mut col_dim, &mut box_dim);
     match res.len() {
       0 => None,
       _ => Some(res),
     }
   }
 
-  fn helper(mat: &mut Vec<Vec<char>>) -> Vec<Vec<Vec<char>>> {
-    let res = Self::reasoning(mat);
-    if res.is_none() {
+  fn helper(
+    mat: &mut Vec<Vec<char>>,
+    row_dim: &mut Vec<u16>,
+    col_dim: &mut Vec<u16>,
+    box_dim: &mut Vec<u16>,
+  ) -> Vec<Vec<Vec<char>>> {
+    if Self::reasoning(mat, row_dim, col_dim, box_dim).is_none() {
       return vec![];
     }
 
@@ -36,36 +42,33 @@ impl Sudoku {
       return vec![mat.to_vec()];
     }
 
-    return Self::backtrack(mat);
+    return Self::backtrack(mat, row_dim, col_dim, box_dim);
   }
 
-  fn reasoning(mat: &mut Vec<Vec<char>>) -> Option<Vec<Vec<char>>> {
+  fn reasoning(
+    mat: &mut Vec<Vec<char>>,
+    row_dim: &mut Vec<u16>,
+    col_dim: &mut Vec<u16>,
+    box_dim: &mut Vec<u16>,
+  ) -> Option<()> {
     let len = mat.len();
     let n = len.sqrt();
-
-    let mut row_dim = Self::row_matrix(mat);
-    let mut col_dim = Self::col_matrix(mat);
-    let mut box_dim = Self::box_matrix(mat);
+    let full = ((1u32 << len) - 1) as u16;
 
     loop {
       let mut count = 0;
-      for (i, row) in mat.into_iter().enumerate() {
-        for (j, cel) in row.into_iter().enumerate() {
-          if *cel == '.' {
+      for i in 0..len {
+        for j in 0..len {
+          if mat[i][j] == '.' {
             let k = i / n * n + j / n;
+            let avail = full & !(row_dim[i] | col_dim[j] | box_dim[k]);
 
-            let used = row_dim[i] | col_dim[j] | box_dim[k];
-            let opts: Vec<_> = (1..=len as u8)
-              .filter(|&d| used & (1 << (d - 1)) == 0)
-              .collect();
-
-            match opts.len() {
+            match avail.count_ones() {
               1 => {
                 count += 1;
 
-                let ans = opts[0];
-
-                *cel = char_to_radix(ans, len + 1);
+                let ans = avail.trailing_zeros() as u8 + 1;
+                mat[i][j] = char_to_radix(ans, len + 1);
 
                 let flag = 1u16 << (ans - 1);
                 row_dim[i] |= flag;
@@ -84,108 +87,92 @@ impl Sudoku {
         break;
       }
     }
-    return Some(mat.to_vec());
+    return Some(());
   }
 
-  fn backtrack(mat: &mut Vec<Vec<char>>) -> Vec<Vec<Vec<char>>> {
+  fn backtrack(
+    mat: &mut Vec<Vec<char>>,
+    row_dim: &mut Vec<u16>,
+    col_dim: &mut Vec<u16>,
+    box_dim: &mut Vec<u16>,
+  ) -> Vec<Vec<Vec<char>>> {
     let len = mat.len();
     let n = len.sqrt();
+    let full = ((1u32 << len) - 1) as u16;
 
-    let row_dim = Self::row_matrix(mat);
-    let col_dim = Self::col_matrix(mat);
-    let box_dim = Self::box_matrix(mat);
-
-    let mut spaces: Vec<Space> = vec![];
-
-    for (i, row) in mat.iter().enumerate() {
-      for (j, cel) in row.iter().enumerate() {
-        if *cel == '.' {
+    // MRV: pick the empty cell with the fewest candidates.
+    let mut best: Option<(usize, usize, u16)> = None;
+    let mut best_count = u32::MAX;
+    for i in 0..len {
+      for j in 0..len {
+        if mat[i][j] == '.' {
           let k = i / n * n + j / n;
-          let used = row_dim[i] | col_dim[j] | box_dim[k];
-          let opts: Vec<_> = (1..=len as u8)
-            .filter(|&d| used & (1 << (d - 1)) == 0)
-            .collect();
-          spaces.push(Space {
-            pos: (i, j),
-            opts: opts,
-          });
+          let avail = full & !(row_dim[i] | col_dim[j] | box_dim[k]);
+          let count = avail.count_ones();
+          if count < best_count {
+            best_count = count;
+            best = Some((i, j, avail));
+          }
         }
       }
     }
-    let sample = spaces.iter().min_by_key(|s| s.opts.len()).unwrap();
-    let (i, j) = sample.pos;
 
-    sample
-      .opts
-      .iter()
-      .flat_map(|opt| {
-        let mut dup = mat.clone();
-        dup[i][j] = char_to_radix(*opt, mat.len() + 1);
-        Self::helper(&mut dup)
-      })
-      .collect()
+    let (i, j, avail) = best.unwrap();
+    let k = i / n * n + j / n;
 
-    // for &opt in &sample.opts {
-    //   let mut dup = board.clone();
-    //   dup[i][j] = char_to_radix(opt, board.len() + 1);
-    //   let res = Self::helper(&mut dup);
-    //   if !res.is_empty() {
-    //     return vec![res[0].clone()];
-    //   }
-    // }
-    // return vec![];
+    let mut results = vec![];
+    let mut bits = avail;
+    while bits != 0 {
+      let flag = bits & bits.wrapping_neg(); // lowest set bit
+      bits &= bits - 1;
+      let ans = flag.trailing_zeros() as u8 + 1;
+
+      let mut dup = mat.clone();
+      let mut dup_row = row_dim.clone();
+      let mut dup_col = col_dim.clone();
+      let mut dup_box = box_dim.clone();
+
+      dup[i][j] = char_to_radix(ans, len + 1);
+      dup_row[i] |= flag;
+      dup_col[j] |= flag;
+      dup_box[k] |= flag;
+
+      results.extend(Self::helper(
+        &mut dup,
+        &mut dup_row,
+        &mut dup_col,
+        &mut dup_box,
+      ));
+    }
+    results
   }
 
   fn completed(mat: &Vec<Vec<char>>) -> bool {
     mat.into_iter().flatten().all(|&c| c != '.')
   }
 
-  fn transpose(mat: &Vec<Vec<char>>) -> Vec<Vec<char>> {
-    let mut t = vec![Vec::with_capacity(mat.len()); mat[0].len()];
-    for r in mat {
-      for i in 0..r.len() {
-        t[i].push(r[i]);
+  // Build row / column / box bitmasks in a single pass over the board.
+  fn masks(mat: &Vec<Vec<char>>) -> (Vec<u16>, Vec<u16>, Vec<u16>) {
+    let len = mat.len();
+    let n = len.sqrt();
+    let radix = len as u32 + 1;
+
+    let mut row = vec![0u16; len];
+    let mut col = vec![0u16; len];
+    let mut bx = vec![0u16; len];
+
+    for i in 0..len {
+      for j in 0..len {
+        if let Some(d) = mat[i][j].to_digit(radix) {
+          let flag = 1u16 << (d - 1);
+          let k = i / n * n + j / n;
+          row[i] |= flag;
+          col[j] |= flag;
+          bx[k] |= flag;
+        }
       }
     }
-    t
-  }
-
-  fn bitmask<'a>(xs: impl IntoIterator<Item = &'a char>, radix: u32) -> u16 {
-    let mut b: u16 = 0;
-    for &x in xs {
-      if let Some(d) = x.to_digit(radix) {
-        b |= 1 << (d - 1);
-      }
-    }
-    return b;
-  }
-
-  fn row_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
-    let radix = mat.len() as u32 + 1;
-    mat.iter().map(|xs| Self::bitmask(xs, radix)).collect()
-  }
-
-  fn col_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
-    let radix = mat.len() as u32 + 1;
-    Self::transpose(mat)
-      .iter()
-      .map(|xs| Self::bitmask(xs, radix))
-      .collect()
-  }
-
-  fn box_matrix(mat: &Vec<Vec<char>>) -> Vec<u16> {
-    let n = mat.len().sqrt();
-    let radix = mat.len() as u32 + 1;
-    mat
-      .chunks(n)
-      .flat_map(|slice| {
-        Self::transpose(&slice.to_owned())
-          .chunks(n)
-          .map(|chunk| chunk.to_owned())
-          .collect::<Vec<_>>()
-      })
-      .map(|xs| Self::bitmask(xs.iter().flatten(), radix))
-      .collect()
+    (row, col, bx)
   }
 }
 
