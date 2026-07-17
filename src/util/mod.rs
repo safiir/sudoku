@@ -34,8 +34,3 @@ pub fn char_to_radix(ch: u8, len: usize) -> char {
     .last()
     .unwrap()
 }
-
-pub struct Space {
-  pub pos: (usize, usize),
-  pub opts: Vec<u8>,
-}
