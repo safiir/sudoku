@@ -33,16 +33,30 @@ impl Sudoku {
     col_dim: &mut Vec<u32>,
     box_dim: &mut Vec<u32>,
   ) -> Vec<Vec<Vec<char>>> {
-    if Self::reasoning(mat, row_dim, col_dim, box_dim).is_none() {
-      return vec![];
-    }
+    let n = mat.len().sqrt();
 
-    if Self::completed(mat) {
+    // reasoning fills cells in place; remember them so we can undo on return.
+    let mut filled: Vec<(usize, usize, u32)> = vec![];
+    let ok = Self::reasoning(mat, row_dim, col_dim, box_dim, &mut filled);
+
+    let result = if !ok {
+      vec![]
+    } else if Self::completed(mat) {
       inspect(&mat, true);
-      return vec![mat.to_vec()];
+      vec![mat.to_vec()]
+    } else {
+      Self::backtrack(mat, row_dim, col_dim, box_dim)
+    };
+
+    for &(i, j, flag) in filled.iter().rev() {
+      let k = i / n * n + j / n;
+      mat[i][j] = '.';
+      row_dim[i] &= !flag;
+      col_dim[j] &= !flag;
+      box_dim[k] &= !flag;
     }
 
-    return Self::backtrack(mat, row_dim, col_dim, box_dim);
+    result
   }
 
   fn reasoning(
@@ -50,7 +64,8 @@ impl Sudoku {
     row_dim: &mut Vec<u32>,
     col_dim: &mut Vec<u32>,
     box_dim: &mut Vec<u32>,
-  ) -> Option<()> {
+    filled: &mut Vec<(usize, usize, u32)>,
+  ) -> bool {
     let len = mat.len();
     let n = len.sqrt();
     let full = ((1u64 << len) - 1) as u32;
@@ -74,9 +89,10 @@ impl Sudoku {
                 row_dim[i] |= flag;
                 col_dim[j] |= flag;
                 box_dim[k] |= flag;
+                filled.push((i, j, flag));
               }
               0 => {
-                return None;
+                return false;
               }
               _ => {}
             }
@@ -87,7 +103,7 @@ impl Sudoku {
         break;
       }
     }
-    return Some(());
+    return true;
   }
 
   fn backtrack(
@@ -127,22 +143,19 @@ impl Sudoku {
       bits &= bits - 1;
       let ans = flag.trailing_zeros() as u8 + 1;
 
-      let mut dup = mat.clone();
-      let mut dup_row = row_dim.clone();
-      let mut dup_col = col_dim.clone();
-      let mut dup_box = box_dim.clone();
+      // make: apply the guess in place
+      mat[i][j] = char_to_radix(ans, len + 1);
+      row_dim[i] |= flag;
+      col_dim[j] |= flag;
+      box_dim[k] |= flag;
 
-      dup[i][j] = char_to_radix(ans, len + 1);
-      dup_row[i] |= flag;
-      dup_col[j] |= flag;
-      dup_box[k] |= flag;
+      results.extend(Self::helper(mat, row_dim, col_dim, box_dim));
 
-      results.extend(Self::helper(
-        &mut dup,
-        &mut dup_row,
-        &mut dup_col,
-        &mut dup_box,
-      ));
+      // undo: revert the guess (bitmasks are naturally reversible)
+      mat[i][j] = '.';
+      row_dim[i] &= !flag;
+      col_dim[j] &= !flag;
+      box_dim[k] &= !flag;
     }
     results
   }
